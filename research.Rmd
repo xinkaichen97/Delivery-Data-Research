@@ -1,0 +1,543 @@
+---
+title: "research"
+author: "xinkaic"
+date: "2/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+# Load data
+delivery.data = read.csv('Case 3 (Youhualin) Dataset.csv', header = T)
+library(tidyverse)
+library(ggplot2)
+library(plyr)
+library(knitr)
+library(sjstats)
+```
+
+```{r}
+delivery.data$store_id = as.factor(delivery.data$store_id)
+
+fit = with(delivery.data, aov(promised.wait ~ store_id * order.year, data = delivery.data))
+summary(fit)
+
+delivery.data$order.minute = format(delivery.data$ordering.time, '%M')
+for (i in 1:23650) {
+  if (delivery.data$order.minute[i] > 45) {
+    delivery.data$hour.exact[i] = as.numeric(delivery.data$order.hour[i]) + 0.75
+  } else if (delivery.data$order.minute[i] > 30) {
+    delivery.data$hour.exact[i] = as.numeric(delivery.data$order.hour[i]) + 0.5
+  } else if (delivery.data$order.minute[i] > 15) {
+    delivery.data$hour.exact[i] = as.numeric(delivery.data$order.hour[i]) + 0.25
+  } else {
+    delivery.data$hour.exact[i] = as.numeric(delivery.data$order.hour[i])
+  }
+}
+
+for (i in 1:23650) {
+  if (delivery.data$promised.wait[i] > 100) {
+    delivery.data$long.wait[i] = 1
+  } else {
+    delivery.data$long.wait[i] = 0
+  }
+}
+
+delivery.data$day = weekdays(delivery.data$ordering.time)
+delivery.data$day = mapvalues(delivery.data$day, from = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'), to = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'))
+
+# breakfast 6 - 9; morning 9 - 11; lunch 11 - 14; afternoon 14 - 17; dinner 17 - 20; late night 20 - 24 
+for (i in 1:23650) {
+  if (delivery.data$hour.exact[i] >= 6 & delivery.data$hour.exact[i] < 9) {
+    delivery.data$period[i] = 'breakfast'
+  } else if (delivery.data$hour.exact[i] >= 9 & delivery.data$hour.exact[i] < 11) {
+    delivery.data$period[i] = 'morning'
+  } else if (delivery.data$hour.exact[i] >= 11 & delivery.data$hour.exact[i] < 14) {
+    delivery.data$period[i] = 'lunch'
+  } else if (delivery.data$hour.exact[i] >= 14 & delivery.data$hour.exact[i] < 17) {
+    delivery.data$period[i] = 'afternoon'
+  } else if (delivery.data$hour.exact[i] >= 17 & delivery.data$hour.exact[i] < 20) {
+    delivery.data$period[i] = 'dinner'
+  } else {
+    delivery.data$period[i] = 'late night'
+  }
+}
+
+for (i in 1:23650) {
+  if (delivery.data$day[i] == 'Sat' | delivery.data$day[i] == 'Sun') {
+    delivery.data$weekend[i] = 'y'
+  } else {
+    delivery.data$weekend[i] = 'n'
+  }
+}
+
+delivery.data = ddply(delivery.data, c('store_id', 'weekend', 'period', 'hour.exact'), mutate, num.orders = length(hour.exact))
+total.unique = unique(delivery.data[, c(1, 14, 13, 12, 15)])
+total.unique$period = factor(total.unique$period, levels = c('breakfast', 'morning', 'lunch', 'afternoon', 'dinner', 'late night'))
+total.unique = arrange(total.unique, weekend, store_id, period)
+k = 1
+for (i in 1:254) {
+  total.unique$interval.num[i] = k
+  if (total.unique$period[i] != total.unique$period[i + 1]) {
+    k = 1
+  } else {
+    k = k + 1
+  }
+}
+ggplot(data = total.unique, mapping = aes(x = interval.num, y = num.orders, fill = weekend)) +
+  geom_bar(stat="identity", position="dodge") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ period, scales='free') + 
+  scale_x_continuous(name = 'Interval', breaks = c(2, 4, 6, 8, 10, 12)) +
+  labs(x = '15 Minutes Interval', y = 'Number', title = 'Number of Orders By Each 15-Minute Interval (Weekday)')
+
+
+delivery.weekday = subset(delivery.data, subset = day != 'Sat' & day != 'Sun')
+delivery.weekend = subset(delivery.data, subset = day == 'Sat' | day == 'Sun')
+
+delivery.weekday = ddply(delivery.weekday, c('store_id', 'period', 'hour.exact'), mutate, num.orders = length(hour.exact))
+weekday.unique = unique(delivery.weekday[, c(1, 13, 12, 14)])
+weekday.unique$period = factor(weekday.unique$period, levels = c('breakfast', 'morning', 'lunch', 'afternoon', 'dinner', 'late night'))
+weekday.unique = arrange(weekday.unique, store_id, period)
+k = 1
+for (i in 1:127) {
+  weekday.unique$interval.num[i] = k
+  if (weekday.unique$period[i] != weekday.unique$period[i + 1]) {
+    k = 1
+  } else {
+    k = k + 1
+  }
+}
+ggplot(data = weekday.unique, mapping = aes(x = interval.num, y = num.orders)) + 
+  geom_col(width = 0.3) +
+  
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ period, scales='free_x') + 
+  scale_x_continuous(name = 'Interval', breaks = c(2, 4, 6, 8, 10, 12)) +
+  scale_y_continuous(name = 'Number', breaks = c(50, 100, 150, 200, 250)) +
+  labs(x = '15 Minutes Interval', y = 'Number', title = 'Number of Orders By Each 15-Minute Interval (Weekday)') + 
+  geom_abline(data = intercept = 200, slope = 0, color = 'darkblue')
+```
+
+```{r}
+delivery.weekend = subset(delivery.data, subset = day == 'Sat' | day == 'Sun')
+
+delivery.weekend = ddply(delivery.weekend, c('store_id', 'period', 'hour.exact'), mutate, num.orders = length(hour.exact))
+weekend.unique = unique(delivery.weekend[, c(1, 13, 12, 14)])
+weekend.unique$period = factor(weekend.unique$period, levels = c('breakfast', 'morning', 'lunch', 'afternoon', 'dinner', 'late night'))
+weekend.unique = arrange(weekend.unique, store_id, period)
+k = 1
+for (i in 1:127) {
+  weekend.unique$interval.num[i] = k
+  if (weekend.unique$period[i] != weekend.unique$period[i + 1]) {
+    k = 1
+  } else {
+    k = k + 1
+  }
+}
+ggplot() + 
+  geom_col(data = total.unique, mapping = aes(x = interval.num, y = num.orders, fill = weekend), width = 0.35, position = "identity") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ period, scales='free_x') + 
+  scale_x_continuous(name = 'Interval', breaks = c(2, 4, 6, 8, 10, 12)) +
+  scale_y_continuous(name = 'Number', breaks = c(50, 100, 150, 200, 250)) +
+  labs(x = '15 Minutes Interval', y = 'Number', title = 'Number of Orders By Each 15-Minute Interval (Weekend)') + 
+  scale_fill_manual(values = c('grey', '#F8766D'))
+
+ggplot() + 
+  geom_col(data = weekday.unique, mapping = aes(x = interval.num, y = num.orders), width = 0.35, fill = 'grey') +
+  geom_col(data = weekend.unique, mapping = aes(x = interval.num, y = num.orders), width = 0.35, fill = '#F8766D') +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ period, scales='free_x') + 
+  scale_x_continuous(name = 'Interval', breaks = c(2, 4, 6, 8, 10, 12)) +
+  scale_y_continuous(name = 'Number', breaks = c(50, 100, 150, 200, 250)) +
+  labs(x = '15 Minutes Interval', y = 'Number', title = 'Number of Orders By Each 15-Minute Interval (Weekend)', color = "weekend")
+legend("topright", c("Weekday", "Weekend"), bty = "n",lty = c(1, 2), lwd = 2, pch = c(24, 20),
+       col = c("grey", "#F8766D"), 
+       inset = .02)
+```
+
+
+```{r}
+# by weekdays
+long.wait.delivery.bwd = ddply(long.wait.delivery, c("store_id", "order.year", "day"), mutate, long.wait = length(day))
+long.wait.delivery.bwd = long.wait.delivery.bwd[, c(1, 6, 13, 14)]
+long.wait.delivery.bwd$day = mapvalues(long.wait.delivery.bwd$day, from = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'), to = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'))
+
+long.wait.delivery.bwd$day = factor(long.wait.delivery.bwd$day, levels = c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'))
+
+ggplot(data = unique(long.wait.delivery.bwd), mapping = aes(x = day, y = long.wait)) + 
+  geom_col() +
+  labs(x = 'Day of the week', y = 'Times', title = 'Number of Long Waits (>100 minutes) by Weekday') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+```
+
+```{r}
+# order number by weekday
+order.count.bwd = ddply(delivery.data, c("store_id", "order.year", "day"), mutate, )
+```
+
+```{r}
+long.wait.delivery.bh = ddply(long.wait.delivery, c("store_id", "order.year", "hour.exact"), mutate, long.wait = length(day))
+long.wait.delivery.bh = long.wait.delivery.bh[, c(1, 6, 12, 14)]
+ggplot(data = unique(long.wait.delivery.bh), mapping = aes(x = hour.exact, y = long.wait)) + 
+  geom_col() +
+  labs(x = 'Hour', y = 'Times', title = 'Number of  Long Waits (>100 minutes) by Half Hour') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_discrete(limits = 8:18) +
+  facet_grid(store_id ~ order.year)
+```
+
+```{r}
+avg.wait.bh = ddply(delivery.data, c('store_id', 'order.year', 'hour.exact'), mutate, avg.wait = sum(promised.wait) / length(hour.exact))
+ggplot(data = avg.wait.bh, mapping = aes(x = hour.exact, y = avg.wait)) + geom_point()
+avg.wait.bh = avg.wait.bh[, c(1, 6, 12, 14)]
+ggplot(data = unique(avg.wait.bh), mapping = aes(x = hour.exact, y = avg.wait)) + 
+  geom_point(color = 'Midnight Blue') +
+  geom_line(color = 'Midnight Blue') +
+  labs(x = 'Hour', y = 'Minutes', title = 'Average Estimated Wait Time by Half Hour') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_discrete(limits = 6:22) +
+  facet_grid(store_id ~ order.year)
+fit = with(avg.wait.bh, aov(avg.wait ~ hour.exact, data = avg.wait.bh))
+summary(fit)
+eta_sq(fit)
+
+order.num.bd = ddply(delivery.data, c('store_id', 'order.year', 'order.day'), mutate, num.orders = length(order.day))
+order.num.bd = order.num.bd[, c(1, 6, 8, 14)]
+order.num.bh$hour.exact = as.factor(order.num.bh$hour.exact)
+
+ggplot(data = order.num.bh, subset, mapping = aes(x = hour.exact, y = num.orders)) +
+  geom_point() +
+  labs(x = 'Hour', y = 'Number') + 
+  facet_grid(. ~ store_id)
+
+linearMod3 = lm(num.orders ~ hour.exact, data = subset(order.num.bh, subset = store_id == 1))
+summary(linearMod3)
+
+ggplot(data = unique(order.num.bd), mapping = aes(x = order.day, y = num.orders)) + 
+  geom_col(fill = 'coral4') +
+  labs(x = 'Date', y = 'Number', title = 'Number of Orders by Half Hour') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+
+order.num.bh = ddply(delivery.data, c('store_id', 'order.year', 'order.day', 'hour.exact'), mutate, num.orders = length(hour.exact))
+order.num.bh = order.num.bh[, c(1, 6, 12, 14)]
+ggplot(data = unique(order.num.bh), mapping = aes(x = hour.exact, y = num.orders)) + 
+  geom_col(width = 0.3, fill = 'coral4') +
+  labs(x = 'Hour', y = 'Number', title = 'Number of Orders by Half Hour') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_discrete(limits = 6:22) +
+  facet_grid(store_id ~ order.year)
+```
+
+```{r}
+long.wait.delivery.bh$hour.exact = as.factor(long.wait.delivery.bh$hour.exact)
+long.wait.delivery.bh.s1 = subset(long.wait.delivery.bh, subset = store_id == 2)
+ggplot(data = long.wait.delivery.bh.s1, mapping = aes(x = hour.exact, y = long.wait)) + geom_point()
+linearMod = lm(long.wait ~ hour.exact, data = long.wait.delivery.bh.s1)
+summary(linearMod)
+
+avg.wait.bh.2 = subset(avg.wait.bh, subset = store_id == 2)
+avg.wait.bh$hour.exact = as.factor(avg.wait.bh$hour.exact)
+linearMod2 = lm(avg.wait ~ hour.exact, data = avg.wait.bh.2)
+summary(linearMod2)
+```
+
+```{r}
+delivery.data.augment = ddply(delivery.data, c('store_id', 'order.year', 'order.day', 'hour.exact'), mutate, num.orders = length(store_id), avg.wait = sum(promised.wait) / length(store_id), long.wait.count = sum(long.wait))
+delivery.data.unique = unique(delivery.data.augment[, c(1, 6, 8, 12, 15, 16, 17)])
+
+ggplot(data = delivery.data.unique, mapping = aes(x = num.orders, y = avg.wait)) + 
+  geom_point() +
+  labs(x = 'Number of Orders', y = 'Minutes')
+
+linearMod = lm(long.wait.count ~ num.orders, data = delivery.data.unique)
+summary(linearMod)
+
+num.orders.squared = log(delivery.data.unique$num.orders)
+model = lm(avg.wait ~ num.orders.squared + num.orders, data = delivery.data.unique)
+summary(model)
+
+ggplot(data = delivery.data.unique, mapping = aes(x = num.orders, y = avg.wait)) + geom_point()
+
+interaction.plot(x.factor = delivery.data$store_id,
+                 trace.factor = factor(delivery.data$order.year),
+                 response = delivery.data$promised.wait,
+                 type = "b", col = c("blue", "darkorange"),
+                 leg.bty = "o", leg.bg = "beige", lwd = 2, pch = c(24,20),
+                 xlab = "Store ID",
+                 ylab = "Wait Time (minutes)",
+                 main = "Interaction Plot",
+                 legend = FALSE)
+legend("topright", c("2018", "2019"), bty = "n",lty = c(1, 2), lwd = 2, pch = c(24, 20),
+       col = c("blue", "darkorange"), 
+       inset = .02)
+```
+
+```{r}
+delivery.data$promised.delivery.time = parse_datetime(as.character(delivery.data$promised.delivery.time), format = "%m/%d/%Y %H:%M")
+delivery.data$ordering.time = parse_datetime(as.character(delivery.data$ordering.time), format = "%m/%d/%Y %H:%M")
+
+Parse.datetime = function(dataframe) {
+  dataframe$promised.delivery.time = parse_datetime(as.character(dataframe$promised.delivery.time), format = "%m/%d/%Y %H:%M")
+  dataframe$ordering.time = parse_datetime(as.character(dataframe$ordering.time), format = "%m/%d/%Y %H:%M")
+  dataframe$order.year = format(dataframe$ordering.time, '%Y')
+  dataframe$order.month = format(dataframe$ordering.time, '%m')
+  dataframe$order.day = format(dataframe$ordering.time, '%d')
+  dataframe$order.hour = format(dataframe$ordering.time, '%H')
+  dataframe$order.minute = format(dataframe$ordering.time, '%M')
+  return(dataframe)
+}
+
+
+Summarize.data = function(column) {
+  column = as.numeric(column)
+  average = mean(column)
+  stddev = sd(column)
+  quantiles = quantile(column, probs = seq(0, 1, 0.25))
+  min.col = quantiles[1]
+  quantile.25 = quantiles[2]
+  median.col = quantiles[3]
+  quantile.75 = quantiles[4]
+  max.col = quantiles[5]
+  return(list(average = average, min.col = min.col, quantile.25 = quantile.25, median.col = median.col, quantile.75 = quantile.75, max.col = max.col, stddev = stddev))
+}
+
+# summary statistics
+delivery.data = Parse.datetime(delivery.data)
+delivery.data = mutate(delivery.data, promised.wait = as.numeric(promised.delivery.time - ordering.time))
+# wait.time = as.numeric(delivery.data$promised.wait)
+delivery.summary = Summarize.data(wait.time)
+delivery.summary$average
+
+# Store one
+store.one = subset(delivery.data, subset = store_id == 1)
+store.one.summary = Summarize.data(store.one$promised.wait)
+
+# 2019
+store.one.2019 = subset(store.one, subset = order.year == 2019)
+store.one.2019.summary = Summarize.data(store.one.2019$promised.wait)
+
+# 2018
+store.one.2018 = subset(store.one, subset = order.year == 2018)
+store.one.2018.summary = Summarize.data(store.one.2018$promised.wait)
+
+
+# Store Two
+store.two = subset(delivery.data, subset = store_id == 2)
+wait.time.two = as.numeric(store.two$promised.wait)
+store.two.summary = Summarize.data(wait.time.two)
+
+# 2019
+store.two.2019 = subset(store.two, subset = order.year == 2019)
+store.two.2019.summary = Summarize.data(store.two.2019$promised.wait)
+
+# 2018
+store.two.2018 = subset(store.two, subset = order.year == 2018)
+store.two.2018.summary = Summarize.data(store.two.2018$promised.wait)
+```
+
+```{r}
+
+# Long wait time
+long.wait.delivery = subset(delivery.data, subset = promised.wait >= 100)
+#subset(long.wait.delivery, subset = store_id == 2)
+long.wait.delivery.75th = subset(delivery.data, subset = promised.wait >= 58)
+
+# by hour
+long.wait.delivery.beh = ddply(long.wait.delivery, c("store_id", "order.year", "hour.exact"), mutate, long.wait.this.hour = length(hour.exact))
+long.wait.wo.time.beh = long.wait.delivery.beh[, c(1, 7, 12, 17)] 
+long.wait.wo.time.beh$hour.exact = as.numeric(long.wait.wo.time.beh$hour.exact)
+long.wait.wo.time.beh = arrange(long.wait.wo.time.beh, hour.exact)
+
+# facet
+ggplot(data = unique(long.wait.wo.time.beh), mapping = aes(x = hour.exact, y = long.wait.this.hour)) + 
+  geom_col() +
+  labs(x = 'Order Hour', y = 'Times', title = 'Number of Long Waits (>100 minutes) by Order Hour') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+```
+
+```{r}
+# by day
+long.wait.delivery.bd = ddply(long.wait.delivery, c("store_id", "order.day"), mutate, long.wait.this.day = length(order.day))
+long.wait.wo.time.bd = long.wait.delivery.bd[, c(1, 7, 9, 12)] 
+
+# long.wait.delivery.75th = ddply(long.wait.delivery.75th, c("store_id", "order.day"), mutate, long.wait.this.day = length(order.day))
+# long.wait.wo.time.75th = long.wait.delivery.75th[, c(1, 7, 9, 11)] 
+
+ggplot(data = unique(long.wait.wo.time.75th), mapping = aes(x = order.day, y = long.wait.this.day)) + 
+  geom_col() +
+  labs(x = 'Order Day', y = 'Times', title = 'Number of Long Waits (>100 minutes) by Order Day') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+
+plot1 = ggplot(data = unique(long.wait.wo.time.bd), mapping = aes(x = order.day, y = long.wait.this.day)) + 
+  geom_col() +
+  labs(x = 'Order Day', y = 'Times', title = 'Number of Long Waits (>100 minutes) by Order Day') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+plot1
+```
+
+
+```{r}
+# extremely long wait
+extreme.long.wait.delivery = subset(delivery.data, subset = promised.wait >= 200)
+extreme.long.wait.delivery = ddply(extreme.long.wait.delivery, c("store_id", "order.hour"), mutate, long.wait.this.hour = length(order.hour))
+extreme.wait.wo.time = extreme.long.wait.delivery[, c(1, 7, 10, 11)] 
+ggplot(data = unique(extreme.wait.wo.time), mapping = aes(x = order.hour, y = long.wait.this.hour)) + 
+  geom_col() +
+  labs(x = 'Order Hour', y = 'Times', title = 'Number of Extremely Long Waits (>200 minutes) by Order Hour') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+
+```
+
+```{r}
+# top 15
+long.wait.delivery = arrange(long.wait.delivery, desc(promised.wait))
+top.15.long.wait = head(long.wait.delivery, 15)
+kable(top.15.long.wait[c(1, 2, 3, 6)])
+top.15.long.wait = ddply(top.15.long.wait, c("store_id", "order.hour"), mutate, long.wait.this.hour = length(order.hour))
+top.15.wo.time = top.15.long.wait[, c(1, 7, 10, 11)] 
+ggplot(data = unique(top.15.wo.time), mapping = aes(x = order.hour, y = long.wait.this.hour)) + 
+  geom_col() +
+  labs(x = 'Order Hour', y = 'Times', title = 'Summary of 15 Longest Waits by Order Hour') + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(data = top.15.long.wait, mapping = aes(x = order.hour, y = promised.wait)) + 
+  geom_point()
+
+ggplot(data = top.15.long.wait, mapping = aes(x = order.day, y = promised.wait)) + 
+  geom_point()
+```
+
+```{r}
+long.wait.store.one.2018 = subset(store.one.2018, subset = promised.wait >= 100)
+long.wait.store.one.2018 = arrange(long.wait.store.one.2018, desc(promised.wait))
+
+# Long wait store one 2018 summary
+lw.s1.2018.summary = ddply(long.wait.store.one.2018, "order.day", summarize, long.wait = length(order.day))
+ggplot(data = lw.s1.2018.summary, mapping = aes(x = order.day, y = long.wait)) + 
+  geom_col() +
+  labs(x = 'Order Day', y = 'Times', title = 'Number of Long Waits (>100 minutes) by Order Day (December 2018, Store 1)') + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+# plot bar chart
+ggplot(data = long.wait.delivery, mapping = aes(x = order.hour, y = long.wait.this.hour)) + 
+  geom_col() +
+  labs(x = 'Order Hour', y = 'Times', title = 'Number of Long Waits (>100 minutes) by Order Hour') + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+# Quantile plot of wait time
+# By store
+ggplot(data = delivery.data, mapping = aes(sample = promised.wait)) + 
+  stat_qq(distribution = qunif, geom = 'point') +
+  facet_wrap('order.year') +
+  labs(x = 'Quantiles', y = 'Wait Time (minutes)', title = 'Quantile Plot of Wait Time By Year (Store 2)') + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+```{r}
+# By year and store number
+ggplot(data = delivery.data, mapping = aes(sample = promised.wait)) + 
+  stat_qq(distribution = qunif, geom = 'point') +
+  facet_grid(store_id ~ order.year) +
+  labs(x = 'Quantiles', y = 'Wait Time (minutes)', title = 'Quantile Plot of Wait Time By Year and Store Number') + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+# Number of long waits
+
+
+ggplot(data = delivery.data, mapping = aes(x = order.day, y = length(promised.wait))) +
+  geom_col() +
+  facet_grid(store_id ~ order.year) +
+  labs(x = 'Quantiles', y = 'Wait Time (minutes)', title = 'Quantile Plot of Wait Time By Year and Store Number') + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+
+```
+
+```{r}
+# By month (store 1)
+ggplot(data = store.one, mapping = aes(sample = promised.wait)) + 
+  stat_qq(distribution = qunif, geom = 'point') +
+  facet_wrap('order.month') +
+  labs(x = 'Quantiles', y = 'Wait Time (minutes)', title = 'Quantile Plot of Wait Time By Year (Store 1)') + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+# By year (store 2)
+ggplot(data = store.two, mapping = aes(sample = promised.wait)) + 
+  stat_qq(distribution = qunif, geom = 'point') +
+  facet_wrap('order.month') +
+  labs(x = 'Quantiles', y = 'Wait Time (minutes)', title = 'Quantile Plot of Wait Time By Year (Store 2)') + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+# By day
+store.one.2018.by.day = ddply(store.one.2018, 'order.day', summarize, avg.wait = mean(promised.wait))
+store.one.2019.by.day = ddply(store.one.2019, 'order.day', summarize, avg.wait = mean(promised.wait))
+store.two.2018.by.day = ddply(store.two.2018, 'order.day', summarize, avg.wait = mean(promised.wait))
+store.two.2019.by.day = ddply(store.two.2019, 'order.day', summarize, avg.wait = mean(promised.wait))
+```
+
+```{r}
+# ORDER NUMBER!!!!
+# by day
+delivery.by.order.count = ddply(delivery.data, c('store_id', 'order.year', 'order.day'), mutate, order.today = length(order.day))
+delivery.count.wo.time = delivery.by.order.count[, c(1, 7, 9, 11)]
+plot2 = ggplot(data = unique(delivery.count.wo.time), mapping = aes(x = order.day, y = order.today)) + 
+  geom_col(fill = 'grey') +
+  labs(x = 'Order Day', y = 'Orders', title = 'Number of Orders by Order Day') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+plot2
+
+ggplot() + 
+  geom_col(data = unique(delivery.count.wo.time), mapping = aes(x = order.day, y = order.today), fill = 'grey') +
+  geom_col(data = unique(long.wait.wo.time.bd), mapping = aes(x = order.day, y = long.wait.this.day * 10)) +
+  labs(x = 'Order Day', y = 'Orders / Times of Long Waits * 10', title = 'Number of Orders Compared with 10x Number of Long Waits By Order Day') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+
+# by hour
+delivery.by.order.count = ddply(delivery.data, c('store_id', 'order.year', 'order.hour'), mutate, order.this.hour = length(order.hour))
+delivery.count.wo.time = delivery.by.order.count[, c(1, 7, 10, 17)]
+ggplot() +
+  geom_col(data = unique(delivery.count.wo.time), mapping = aes(x = order.hour, y = order.this.hour), fill = 'grey') +
+  geom_line(data = unique(long.wait.wo.time.bh), mapping = aes(x = order.hour, y = long.wait.this.hour * 5 + 500), group = 1, size = 1) +
+  labs(x = 'Order Hour', y = 'Orders / Times of Long Waits * 5', title = 'Number of Orders Compared with 5x Number of Long Waits By Order Hour') + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  facet_grid(store_id ~ order.year)
+```
